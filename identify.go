@@ -46,13 +46,6 @@ type IdentityProvider struct {
 	Method string `json:"method"`
 }
 
-type LoginResponse struct {
-	idxContext        *Context
-	token             *Token
-	availableSteps    []LoginStep
-	identifyProviders []IdentityProvider
-}
-
 type LoginStep int
 
 // InitLogin Initialize the IDX login.
@@ -115,9 +108,6 @@ func (c *Client) AuthenticateWithActivationToken(ctx context.Context, authentica
 	if err != nil {
 		return nil, err
 	}
-	if !lr.HasStep(LoginStepAuthenticatorEnroll) {
-		return nil, fmt.Errorf("progression to select authenticator enroll failed")
-	}
 
 	return lr, nil
 }
@@ -131,7 +121,7 @@ func (r *LoginResponse) Identify(ctx context.Context, ir *IdentifyRequest) (*Log
 	if err != nil {
 		return nil, err
 	}
-	ro, err := resp.remediationOption(option)
+	ro, err := resp.remediationOption("identify")
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +268,7 @@ func (r *LoginResponse) GoogleAuthConfirm(ctx context.Context, code string) (*Lo
 
 func (r *LoginResponse) WebAuthNSetup(ctx context.Context) (*LoginResponse, error) {
 	if !r.HasStep(LoginStepWebAuthNSetup) {
-		return nil, fmt.Errorf("this step is not available, please try one of %s", r.AvailableSteps())
+		return r.missingStepError(LoginStepWebAuthNSetup)
 	}
 	err := r.enrollAuthenticator(ctx, "Security Key or Biometric")
 	if err != nil {
@@ -290,7 +280,7 @@ func (r *LoginResponse) WebAuthNSetup(ctx context.Context) (*LoginResponse, erro
 
 func (r *LoginResponse) WebAuthNInitialVerify(ctx context.Context, credentials *WebAuthNVerifyCredentials) (*LoginResponse, error) {
 	if !r.HasStep(LoginStepWebAuthNInitialVerify) {
-		return nil, fmt.Errorf("this step is not available, please try one of %s", r.AvailableSteps())
+		return r.missingStepError(LoginStepWebAuthNInitialVerify)
 	}
 	if credentials == nil {
 		return nil, errors.New("invalid credentials")
@@ -314,7 +304,7 @@ type WebAuthNChallengeCredentials struct {
 
 func (r *LoginResponse) WebAuthNVerify(ctx context.Context, credentials *WebAuthNChallengeCredentials) (*LoginResponse, error) {
 	if !r.HasStep(LoginStepWebAuthNVerify) {
-		return nil, fmt.Errorf("this step is not available, please try one of %s", r.AvailableSteps())
+		return r.missingStepError(LoginStepWebAuthNVerify)
 	}
 	if credentials == nil {
 		return nil, errors.New("invalid credentials")
@@ -604,11 +594,6 @@ func (r *LoginResponse) setupNextSteps(ctx context.Context, resp *Response) erro
 	_, err := resp.remediationOption("identify")
 	if err == nil {
 		r.appendStep(LoginStepIdentify)
-	}
-
-	_, err = resp.remediationOption("select-authenticator-enroll")
-	if err == nil {
-		steps = append(steps, LoginStepAuthenticatorEnroll)
 	}
 
 	ros, err := resp.remediationOptions("redirect-idp")
